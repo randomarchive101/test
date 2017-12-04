@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>3D room</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<style>
+			body {
+				font-family: Monospace;
+				background-color: #000;
+				color: #fff;
+				margin: 0px;
+				overflow: hidden;
+			}
+			#info {
+				color: #fff;
+				position: absolute;
+				top: 10px;
+				width: 100%;
+				text-align: center;
+				z-index: 100;
+				display:block;
+			}
+			#info a, .button { color: #f00; font-weight: bold; text-decoration: underline; cursor: pointer }
+		</style>
+	</head>
+
+	<body>
+		
+
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/build/three.min.js"></script>
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/controls/OrbitControls.js"></script>
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/Detector.js"></script>
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/stats.min.js"></script>
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/DDSLoader.js"></script>
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/loaders/MTLLoader.js"></script>
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/dat.gui.min.js"></script>
+<script src="https://cdn.rawgit.com/mrdoob/three.js/master/examples/js/libs/tween.min.js"></script>
+<script>
+		
+			if ( ! Detector.webgl ) Detector.addGetWebGLMessage();
+			var container, renderer,annie;
+			var camera, scene, projector,raycaster;
+			var mouseX=0;
+			var mouseY=0;
+			//objects in the scene
+			var walls;
+			var piano;
+			var interactiveObj = [];
+			var wallWidth = 1000;
+			var clock = new THREE.Clock();
+			var mouse, INTERSECTED;
+			var listener = new THREE.AudioListener();
+			var sound = new THREE.Audio( listener );
+			var audioLoader = new THREE.AudioLoader();
+
+			init();
+			animate();
+			
+			function init(){
+				container = document.createElement('div');
+				document.body.appendChild(container);
+				camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 1, 10000);
+				camera.position.set(0,  10, 100);
+				camera.lookAt( new THREE.Vector3(10,10,10));
+				camera.add( listener );
+				controls = new THREE.OrbitControls( camera );
+				scene = new THREE.Scene();
+				projector = new THREE.Projector();
+				var ambient = new THREE.AmbientLight(0x666666);
+				scene.add(ambient);
+				
+				
+				
+				//////////
+				var bulbGeometry = new THREE.SphereGeometry( 50, 16, 20 );
+				bulbLight = new THREE.PointLight( 0xffee88, 1, 0, 2 );
+
+				bulbMat = new THREE.MeshStandardMaterial( {
+					emissive: 0xffffee,
+					emissiveIntensity: 1,
+					color: 0x000000
+				});
+				bulbLight.add( new THREE.Mesh( bulbGeometry, bulbMat ) );
+				bulbLight.position.y = -wallWidth/4+100;
+						bulbLight.position.z= -wallWidth/4;
+						bulbLight.position.x= -wallWidth-100;
+				bulbLight.castShadow = true;
+				
+				scene.add( bulbLight );
+				////animation
+				 var runnerTexture = new THREE.ImageUtils.loadTexture( 'r.png');
+	              annie = new TextureAnimator( runnerTexture, 22, 1, 22, 75 ); // texture, #horiz, #vert, #total, duration.
+	              var runnerMaterial = new THREE.MeshBasicMaterial( { map: runnerTexture, side:THREE.DoubleSide } );
+				 var runnerGeometry = new THREE.PlaneGeometry(wallWidth/2, wallWidth/2, 1, 1);
+	             var runner = new THREE.Mesh(runnerGeometry, runnerMaterial);
+	             runner.position.set(5, -wallWidth/2+5, -wallWidth/2+5);
+	            scene.add(runner);
+				//////////////////////////
+				var onProgress = function ( xhr ) {
+					if ( xhr.lengthComputable ) {
+						var percentComplete = xhr.loaded / xhr.total * 100;
+						console.log( Math.round(percentComplete, 2) + '% downloaded' );
+					}
+				};
+
+				var onError = function ( xhr ) { };
+				THREE.Loader.Handlers.add( /\.dds$/i, new THREE.DDSLoader() );
+				 var mtlLoader = new THREE.MTLLoader();
+				mtlLoader.load( 'piano.mtl', function( materials ) {
+					materials.preload();
+                  	var objLoader = new THREE.OBJLoader();
+					objLoader.setMaterials( materials );
+					//objLoader.setPath( 'obj/' );
+					objLoader.load( 'piano.obj', function ( piano ) {
+					piano.scale.set(100,100,100);
+						piano.position.y = -wallWidth;
+						piano.position.z= -wallWidth/4+400;
+						piano.position.x= -wallWidth/4-110;					
+						scene.add( piano );
+						interactiveObj.push(piano);
+					}, onProgress, onError );
+
+				});
+
+				renderer = new THREE.WebGLRenderer({ antialias: true } );
+				renderer.setSize(window.innerWidth, window.innerHeight);
+				renderer.shadowMapEnabled = true;
+				container.appendChild( renderer.domElement );
+
+				raycaster = new THREE.Raycaster();
+				mouse = new THREE.Vector2();
+				document.addEventListener('DOMMouseScroll', onDocumentMouseWheel, false);
+				document.addEventListener( 'mousemove', onDocumentMouseMove, false );
+				document.addEventListener('mousedown', onDocumentMouseDown, false);
+				 //const controls = new THREE.OrbitControls( camera, renderer.domElement );
+				
+				window.addEventListener( 'resize', onWindowResize, false );
+			}
+			
+			function animate() {
+				requestAnimationFrame( animate );
+				var delta = clock.getDelta(); 
+	            annie.update(100* delta);
+				controls.update();              
+			    render();
+
+			}
+			
+			function render() {
+			renderer.shadowMap.enabled =true;
+				bulbLight.castShadow = true;
+				renderer.render( scene, camera );
+			}
+			
+			function onWindowResize() {
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+			}
+			
+				
+			
+			
+			
+			
+		function onDocumentMouseDown(event) {
+			event.preventDefault();
+			mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
+			mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;      
+			raycaster.setFromCamera( mouse, camera );
+			var intersects = raycaster.intersectObjects(  scene.children);
+			if ( intersects.length > 0 ) {
+				audioLoader.load( 'ms.ogg', function( buffer ) {
+						sound.setBuffer( buffer );
+						sound.setLoop( false );
+						sound.setVolume( 0.5 );
+						sound.play();
+										});
+ 
+  }
+}
+ 
+			
+			
+
+			function onDocumentMouseMove( event ) {
+			   event.preventDefault();
+				mouseX = ( event.clientX - windowHalfX );
+				mouseY = ( event.clientY - windowHalfY );
+				render();
+
+			}
+			
+			
+			function onDocumentMouseWheel( event ) {
+			   event.preventDefault();
+				mouseDelta = (-event.wheelDeltaY|| event.detail);
+				camera.position.z += mouseDelta * 10 ;
+				render();
+			}
+
+			
+			
+			
+			function TextureAnimator(texture, tilesHoriz, tilesVert, numTiles, tileDispDuration) 
+{	
+	this.tilesHorizontal = tilesHoriz;
+	this.tilesVertical = tilesVert;
+	this.numberOfTiles = numTiles;
+	texture.wrapS = texture.wrapT = THREE.RepeatWrapping; 
+	texture.repeat.set( 1 / this.tilesHorizontal, 1 / this.tilesVertical );
+	this.tileDisplayDuration = tileDispDuration;
+	this.currentDisplayTime = 0;
+	this.currentTile = 0;
+		
+	this.update = function( milliSec )
+	{
+		this.currentDisplayTime += milliSec;
+		while (this.currentDisplayTime > this.tileDisplayDuration)
+		{
+			this.currentDisplayTime -= this.tileDisplayDuration;
+			this.currentTile++;
+			if (this.currentTile == this.numberOfTiles)
+				this.currentTile = 0;
+			var currentColumn = this.currentTile % this.tilesHorizontal;
+			texture.offset.x = currentColumn / this.tilesHorizontal;
+			var currentRow = Math.floor( this.currentTile / this.tilesHorizontal );
+			texture.offset.y = currentRow / this.tilesVertical;
+		}
+	};
+}		
+			
+
+		</script>
+
+	</body>
+</html>
